@@ -1268,15 +1268,12 @@ async function fetchAllData() {
 
     setStatus('✓ Данные загружены', false); setTimeout(()=>{ const el=document.getElementById('load-status'); if(el)el.style.display='none'; },2000); populateSelects();
     renderHistory();
-    // ── Сохраняем кэш для офлайн-режима ─────────────────────────────────
+    // ── Офлайн-кэш удалён: чистим старые ключи, накопленные на устройствах ──
+    // (настройки входа crm_cfg и принтер bt_printer_id НЕ трогаем)
     try {
-      localStorage.setItem('cache_clients',   JSON.stringify(clientsData));
-      localStorage.setItem('cache_drinks',    JSON.stringify(drinksData));
-      localStorage.setItem('cache_equipment', JSON.stringify(equipmentData));
-      localStorage.setItem('cache_visits',    JSON.stringify(visitsData));
-      localStorage.setItem('cache_drinkOpts', JSON.stringify(window._drinkOptions||[]));
-      localStorage.setItem('cache_time',      new Date().toISOString());
-    } catch(ce) { console.warn('Кэш не сохранён:', ce); }
+      ['cache_clients','cache_drinks','cache_equipment','cache_visits','cache_drinkOpts','cache_time']
+        .forEach(k => localStorage.removeItem(k));
+    } catch(ce) {}
   } catch(e) {
     const msg = 'Ошибка: ' + e.message;
     const el = document.getElementById('load-status');
@@ -1285,29 +1282,6 @@ async function fetchAllData() {
       el.style.color = 'var(--danger)';
       el.style.display = 'block';
     }
-    // ── Пробуем загрузить кэш ───────────────────────────────────────────
-    try {
-      const cc = localStorage.getItem('cache_clients');
-      if (cc) {
-        clientsData   = JSON.parse(cc);
-        drinksData    = JSON.parse(localStorage.getItem('cache_drinks')    || '{}');
-        equipmentData = JSON.parse(localStorage.getItem('cache_equipment') || '{}');
-        visitsData    = JSON.parse(localStorage.getItem('cache_visits')    || '[]');
-        window._drinkOptions = JSON.parse(localStorage.getItem('cache_drinkOpts') || '[]');
-        const cacheTime = localStorage.getItem('cache_time');
-        const cacheAge  = cacheTime ? Math.round((Date.now()-new Date(cacheTime))/60000) : '?';
-        populateSelects();
-        renderHistory();
-        if (el) {
-          el.textContent = `⚠️ Офлайн — данные из кэша (${cacheAge} мин. назад)`;
-          el.style.color   = 'var(--accent)';
-          el.style.display = 'block';
-        }
-        showToast(`⚠️ Нет сети — показаны данные ${cacheAge} мин. назад`, false);
-        console.warn('fetchAllData: используем кэш');
-        return;
-      }
-    } catch(ce) { console.warn('Кэш недоступен:', ce); }
     showToast(msg, true);
     console.error('fetchAllData error:', e);
   }
@@ -1667,32 +1641,18 @@ async function submitVisit() {
     const gen = v('general-counter');
     const eng = v('engineer-counter');
 
-    // Список задач — каждая со своим названием для повтора
-    const tasks = [];
+    // Отправляем ПОСЛЕДОВАТЕЛЬНО (не параллельно) — три одновременных запроса
+    // к одной таблице нагружали сам Apps Script/Sheets API сильнее, чем
+    // последовательная отправка по одному. Дубли не страшны — защищены
+    // dedup-проверкой на сервере независимо от порядка отправки.
     if (_hasOst || _hasZay || _hasCounters) {
-      tasks.push({ name:'addVisit', fn: () => scriptPost({ action:'addVisit', row }, 2, 25000, targetUrl) });
+      await scriptPost({ action:'addVisit', row }, 1, 25000, targetUrl);
     }
     if (cRows.length) {
-      tasks.push({ name:'addCounters', fn: () => scriptPost({ action:'addCounters', rows:cRows }, 2, 45000, targetUrl) });
+      await scriptPost({ action:'addCounters', rows:cRows }, 1, 45000, targetUrl);
     }
     if (gen || eng) {
-      tasks.push({ name:'addGenCounters', fn: () => scriptPost({ action:'addGenCounters', row:[client, serial, ds, gen||'', eng||''] }, 2, 25000, targetUrl) });
-    }
-
-    // Первая попытка — все параллельно
-    let settled = await Promise.allSettled(tasks.map(t => t.fn()));
-
-    // Тихий повтор только тех задач, что упали (без уведомления торгового)
-    const failedIdx = settled.map((r,i) => r.status === 'rejected' ? i : -1).filter(i => i >= 0);
-    if (failedIdx.length) {
-      const retryResults = await Promise.allSettled(failedIdx.map(i => tasks[i].fn()));
-      retryResults.forEach((r, j) => { settled[failedIdx[j]] = r; });
-    }
-
-    // Если после повтора всё равно есть провалы — показываем ошибку пользователю
-    const stillFailed = settled.filter(r => r.status === 'rejected');
-    if (stillFailed.length) {
-      throw stillFailed[0].reason;
+      await scriptPost({ action:'addGenCounters', row:[client, serial, ds, gen||'', eng||''] }, 1, 25000, targetUrl);
     }
 
     showToast('✓ Визит сохранён!');
