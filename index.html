@@ -1481,9 +1481,12 @@ function onMachineChange() {
   const _lvRow = document.getElementById('cc-last-visit-row');
   const _lvVal = document.getElementById('cc-last-visit');
   if (_lvRow && _lvVal && machId) {
+    // Дата — строка ДД.ММ.ГГГГ: сравнивать напрямую нельзя (сортирует по числу
+    // месяца). Переворачиваем в ГГГГММДД для корректного поиска последнего визита.
+    const _lvKey = d => { const p=String(d||'').split('.'); return p.length===3?p[2]+p[1]+p[0]:'00000000'; };
     const _lv = visitsData.filter(v =>
       String(v[0]).trim() === name
-    ).sort((a,b) => (b[1]>a[1]?1:-1))[0];
+    ).sort((a,b) => _lvKey(b[1]).localeCompare(_lvKey(a[1])))[0];
     if (_lv) {
       _lvRow.style.display = '';
       _lvVal.textContent = fmtDate(_lv[1]);
@@ -1495,9 +1498,10 @@ function onMachineChange() {
   const _gi = document.getElementById('general-counter');
   const _ei = document.getElementById('engineer-counter');
   if (_gi && machId) {
+    const _gcKey = d => { const p=String(d||'').split('.'); return p.length===3?p[2]+p[1]+p[0]:'00000000'; };
     const _gc = (window._allGenCounters||[])
       .filter(r => String(r[0]).trim()===name && String(r[1]).trim()===machId)
-      .sort((a,b)=>(b[2]>a[2]?1:-1));
+      .sort((a,b)=>_gcKey(b[2]).localeCompare(_gcKey(a[2])));
     if (_gc.length) {
       const _l = _gc[0];
       _gi.placeholder = (_l[3]!=null&&_l[3]!=='') ? 'прошлый: '+_l[3] : 'Общий';
