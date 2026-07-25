@@ -2676,9 +2676,6 @@ let _lastInvoiceForPrint = null;
 
 function showInvoiceReceipt(invoice) {
   _lastInvoiceForPrint = invoice;
-  const uc = (window._userContactInfo || {})[invoice.tpLabel] || (window._userContactInfo || {})[invoice.tp] || {};
-  const qrLink = uc.link || '';
-  const contact = uc.contact || '';
 
   let html = '';
 
@@ -2715,21 +2712,6 @@ function showInvoiceReceipt(invoice) {
   if (invoice.card)    html += `<div class="summary-row"><span class="sl">Оплата на карту</span><span class="sv">${invoice.card} грн</span></div>`;
   if (invoice.service) html += `<div class="summary-row"><span class="sl">Сервіс</span><span class="sv">${invoice.service} грн.</span></div>`;
   if (invoice.otsr)    html += `<div class="summary-row"><span class="sl">Відстрочка</span><span class="sv">${invoice.otsr} грн.</span></div>`;
-  html += `<div style="border-top:1px solid #ddd;margin:14px 0"></div>`;
-
-  // QR + Наш Instagram / Рекомендуйте нас!
-  html += `<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
-    ${qrLink ? `<img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrLink)}" style="width:80px;height:80px;border-radius:6px" />` : ''}
-    <div>
-      <div style="font-size:16px;font-weight:700;line-height:1.3">Наш<br>Instagram</div>
-      <div style="font-size:14px;font-weight:600;color:#444;margin-top:6px">Рекомендуйте нас!</div>
-    </div>
-  </div>`;
-  html += `<div style="border-top:1px solid #ddd;margin:10px 0"></div>`;
-
-  // Контакти для зв'язку
-  html += `<div style="text-align:center;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Контакти для зв'язку</div>`;
-  html += `<div style="text-align:center;font-size:14px;font-weight:600;white-space:pre-line;line-height:1.5">${contact || '—'}</div>`;
 
   document.getElementById('summary-body').innerHTML = html;
   document.getElementById('summary-subtitle').textContent = invoice.date + ' · ' + (invoice.tpLabel||invoice.tp);
@@ -2764,10 +2746,55 @@ let _btPrinterChar   = null;
 const BT_PRINTER_SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
 const BT_PRINTER_CHAR_UUID    = '00002af1-0000-1000-8000-00805f9b34fb';
 
-// CP1251 поддерживает украинские буквы і/ї/є/ґ (в отличие от CP866).
-// Перед текстом отправляем команду переключения кодовой страницы принтера.
+// Номер кодовой страницы у каждого производителя СВОЙ: у Xprinter CP1251 = 72,
+// у Zjiang/ZJ-5805 и других — другой номер. Поэтому значение настраивается
+// на устройстве (localStorage), а не зашито в код. Дефолт — 72 (Xprinter).
+function getPrinterCodepage() {
+  // Дефолт — 17, подтверждено тест-печатью на ZJ-5805 (модель у всех торговых)
+  const v = parseInt(localStorage.getItem('bt_codepage'), 10);
+  return Number.isFinite(v) ? v : 17;
+}
+function getPrinterEncoding() {
+  // Дефолт — cp866, ZJ-5805 не поддерживает CP1251 ни на одной проверенной таблице
+  const saved = localStorage.getItem('bt_encoding');
+  return saved === 'cp1251' ? 'cp1251' : 'cp866';
+}
 function escposSetCodepage(push) {
-  push([0x1B, 0x74, 0x48]); // ESC t 72 — Windows-1251 (поддерживается большинством ESC/POS, включая Xprinter)
+  push([0x1C, 0x2E]); // FS . — выйти из режима китайских иероглифов (безвредно для принтеров без этого режима)
+  push([0x1B, 0x74, getPrinterCodepage()]);
+}
+
+// Кодирует строку в выбранную кодировку принтера
+function encodeCyrillic(str) {
+  return getPrinterEncoding() === 'cp866' ? cyrillicToCp866(str) : cyrillicToCp1251(str);
+}
+
+// CP866 на этом клоне принтера не совпадает со стандартной раскладкой
+// в позициях 0xF0-0xF5 (там должны быть Ё/ё/Є/є/Ї/ї, но по факту не они) —
+// подтверждено тестовой печатью. Базовая кириллица А-Я/а-я печатается верно,
+// поэтому украинские спецбуквы подменяем на похожие ИЗ ЭТОГО проверенного
+// диапазона, а не полагаемся на расширенные позиции таблицы.
+function cyrillicToCp866(str) {
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 128) { bytes.push(c); continue; }
+    if (c === 0x0401) { bytes.push(0x85); continue; } // Ё → Е (кириллица, байт по формуле А-Я)
+    if (c === 0x0451) { bytes.push(0xA5); continue; } // ё → е (кириллица, байт по формуле а-п)
+    if (c === 0x0404) { bytes.push(0x85); continue; } // Є → Е (кириллица)
+    if (c === 0x0454) { bytes.push(0xA5); continue; } // є → е (кириллица)
+    if (c === 0x0407) { bytes.push(0x89); continue; } // Ї → Й (кириллица, похожий «домик»)
+    if (c === 0x0457) { bytes.push(0xA9); continue; } // ї → й (кириллица)
+    if (c === 0x0406) { bytes.push(0x49); continue; } // І → латинская I
+    if (c === 0x0456) { bytes.push(0x69); continue; } // і → латинская i
+    if (c === 0x0490) { bytes.push(0x83); continue; } // Ґ → Г
+    if (c === 0x0491) { bytes.push(0xA3); continue; } // ґ → г
+    if (c >= 0x0410 && c <= 0x042F) { bytes.push(c - 0x0410 + 0x80); continue; } // А-Я
+    if (c >= 0x0430 && c <= 0x043F) { bytes.push(c - 0x0430 + 0xA0); continue; } // а-п
+    if (c >= 0x0440 && c <= 0x044F) { bytes.push(c - 0x0440 + 0xE0); continue; } // р-я
+    bytes.push(0x3F);
+  }
+  return bytes;
 }
 
 function cyrillicToCp1251(str) {
@@ -2816,7 +2843,6 @@ function escposEncode(invoice, copyLabel) {
   const bytes = [];
   const push = arr => arr.forEach(b => bytes.push(b));
   const ESC = 0x1B, GS = 0x1D;
-  const uc = (window._userContactInfo || {})[invoice.tpLabel] || (window._userContactInfo || {})[invoice.tp] || {};
 
   push([ESC, 0x40]);
   escposSetCodepage(push); // переключаем принтер на CP1251 для украинских букв
@@ -2824,7 +2850,7 @@ function escposEncode(invoice, copyLabel) {
 
   function textLine(str, bold) {
     if (bold) push([ESC, 0x45, 0x01]);
-    push(cyrillicToCp1251(str));
+    push(encodeCyrillic(str));
     push([0x0A]);
     if (bold) push([ESC, 0x45, 0x00]);
   }
@@ -2850,21 +2876,6 @@ function escposEncode(invoice, copyLabel) {
   if (invoice.service) textLine('Сервiс: ' + invoice.service + ' грн.');
   if (invoice.otsr)    textLine('Вiдстрочка: ' + invoice.otsr + ' грн.');
   push([0x0A]);
-
-  // QR-код на сторінку торгового
-  if (uc.link) {
-    push([ESC, 0x61, 0x01]); // центр
-    escposQR(bytes, push, uc.link);
-    push([0x0A]);
-    textLine('Наш Instagram');
-    textLine('Рекомендуйте нас!', true);
-  }
-
-  if (uc.contact) {
-    push([0x0A]);
-    textLine("Контакти для зв'язку:");
-    uc.contact.split('\n').forEach(line => { if (line.trim()) textLine(line.trim(), true); });
-  }
 
   push([0x0A, 0x0A, 0x0A]);
   push([GS, 0x56, 0x00]);
