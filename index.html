@@ -236,9 +236,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     <button class="nav-tab" onclick="switchTab('history',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>История
     </button>
-    <button class="nav-tab" onclick="switchTab('changes',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Изменения
-    </button>
     <button class="nav-tab" onclick="switchTab('addclient',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Клиент
     </button>
@@ -499,8 +496,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     </div>
     <div class="input-grid">
       <div class="input-group">
-        <label>Сервис (раз в мес.)</label>
-        <input type="text" id="nc-service" placeholder="1">
+        <label>Сервис дата/сумма</label>
+        <input type="text" id="nc-service" placeholder="24/25002">
       </div>
       <div class="input-group">
         <label>Бонус / прочее</label>
@@ -873,12 +870,12 @@ function applyRoleRestrictions() {
   // Сначала сбрасываем все вкладки — чтобы при смене аккаунта не оставались скрытые
   document.querySelectorAll('.nav-tab').forEach(el => el.style.display = '');
 
-  // Техник: убрать вкладки Изменения, Клиент, Накладная. Скрыть заявку и прайс.
+  // Техник: убрать вкладки Клиент, Накладная. Скрыть заявку и прайс.
+  // (вкладка Изменения удалена из приложения для всех ролей)
   if (isTech()) {
-    // Скрыть вкладки Изменения, Клиент, Накладная
     document.querySelectorAll('.nav-tab').forEach(el => {
       const txt = el.textContent.trim().toLowerCase();
-      if (txt === 'изменения' || txt === 'клиент' || txt === 'накладная') el.style.display = 'none';
+      if (txt === 'клиент' || txt === 'накладная') el.style.display = 'none';
     });
     // Скрыть секцию Заявка в визите
     const zaySections = document.querySelectorAll('.section-title');
@@ -2415,7 +2412,7 @@ function showSummary() {
 
   if (v('nc-service')||v('nc-bonus')||v('nc-otsr')) {
     html += '<div class="summary-section">Условия</div>';
-    html += r('Сервис (раз/мес)', v('nc-service'));
+    html += r('Сервис дата/сумма', v('nc-service'));
     html += r('Бонус / прочее',   v('nc-bonus'));
     html += r('Отсрочка',         v('nc-otsr') ? v('nc-otsr')+' дн.' : '');
   }
@@ -3077,4 +3074,3 @@ loadConfig();
 
 </body>
 </html>
- 
