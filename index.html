@@ -640,6 +640,10 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
       <div class="input-group"><label>Оплата на карту</label><input inputmode="decimal" type="number" id="inv-card" step="0.01" min="0" placeholder="0.00"><div class="unit">грн</div></div>
     </div>
 
+    <!-- ПРИМЕЧАНИЕ -->
+    <div class="section-title" style="margin-top:20px">Примечание</div>
+    <textarea class="input-textarea" id="inv-note" placeholder="Примечание к накладной (попадёт в чек и в таблицу)"></textarea>
+
     <button class="btn-submit" onclick="submitInvoice()" style="margin-top:16px">
       <div class="spinner" id="inv-spinner"></div>
       <span id="inv-label">Сохранить</span>
@@ -2607,7 +2611,7 @@ function resetInvoiceForm() {
   document.getElementById('inv-client-select').value = '';
   document.getElementById('inv-client-manual-wrap').style.display = 'none';
   document.getElementById('inv-client-manual').value = '';
-  ['inv-fact','inv-otsr','inv-service','inv-card'].forEach(id => {
+  ['inv-fact','inv-otsr','inv-service','inv-card','inv-note'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   recalcInvoiceTotal();
@@ -2635,6 +2639,7 @@ async function submitInvoice() {
   const otsr    = parseFloat(document.getElementById('inv-otsr')?.value)    || 0;
   const service = parseFloat(document.getElementById('inv-service')?.value) || 0;
   const card    = parseFloat(document.getElementById('inv-card')?.value)    || 0;
+  const note    = document.getElementById('inv-note')?.value.trim() || '';
 
   const n = new Date();
   const dateStr = String(n.getDate()).padStart(2,'0')+'.'+String(n.getMonth()+1).padStart(2,'0')+'.'+n.getFullYear();
@@ -2654,6 +2659,7 @@ async function submitInvoice() {
       tp, tpLabel, client: name, date: dateStr, time: timeStr,
       items, total: total.toFixed(2),
       fact: fact || '', otsr: otsr || '', service: service || '', card: card || '',
+      note,
     };
     await scriptPost({ action: 'addInvoice', invoice: invoiceRow });
     showToast('✓ Накладная сохранена!');
@@ -2709,6 +2715,13 @@ function showInvoiceReceipt(invoice) {
   if (invoice.card)    html += `<div class="summary-row"><span class="sl">Оплата на карту</span><span class="sv">${invoice.card} грн</span></div>`;
   if (invoice.service) html += `<div class="summary-row"><span class="sl">Сервіс</span><span class="sv">${invoice.service} грн.</span></div>`;
   if (invoice.otsr)    html += `<div class="summary-row"><span class="sl">Відстрочка</span><span class="sv">${invoice.otsr} грн.</span></div>`;
+
+  // Примечание
+  if (invoice.note) {
+    html += `<div style="border-top:1px solid #ddd;margin:10px 0"></div>`;
+    html += `<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Примітка</div>`;
+    html += `<div style="font-size:14px;white-space:pre-line;line-height:1.4">${invoice.note}</div>`;
+  }
 
   document.getElementById('summary-body').innerHTML = html;
   document.getElementById('summary-subtitle').textContent = invoice.date + ' · ' + (invoice.tpLabel||invoice.tp);
@@ -2872,6 +2885,26 @@ function escposEncode(invoice, copyLabel) {
   if (invoice.card)    textLine('Оплата на карту: ' + invoice.card + ' грн');
   if (invoice.service) textLine('Сервiс: ' + invoice.service + ' грн.');
   if (invoice.otsr)    textLine('Вiдстрочка: ' + invoice.otsr + ' грн.');
+
+  // Примечание — переносим по словам, чтобы не обрезалось по ширине ленты
+  if (invoice.note) {
+    textLine('------------------------------');
+    textLine('Примiтка:');
+    const WIDTH = 32;
+    String(invoice.note).split('\n').forEach(paragraph => {
+      let line = '';
+      paragraph.trim().split(/\s+/).forEach(word => {
+        if (!word) return;
+        if ((line + ' ' + word).trim().length > WIDTH) {
+          if (line) textLine(line);
+          line = word;
+        } else {
+          line = (line ? line + ' ' : '') + word;
+        }
+      });
+      if (line) textLine(line);
+    });
+  }
   push([0x0A]);
 
   push([0x0A, 0x0A, 0x0A]);
